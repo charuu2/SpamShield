@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SpamShield — AI Spam Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #08090d;
+    --surface: #0f1117;
+    --surface2: #161822;
+    --border: rgba(255,255,255,0.07);
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --accent: #7c6af7;
+    --accent2: #5eead4;
+    --spam: #f87171;
+    --ham: #34d399;
+    --warn: #fbbf24;
+    --glow-spam: rgba(248,113,113,0.3);
+    --glow-ham: rgba(52,211,153,0.3);
+    --glow-accent: rgba(124,106,247,0.4);
+  }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Animated background ── */
+  .bg-grid {
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(124,106,247,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,106,247,0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+  }
+
+  .orb {
+    position: fixed; border-radius: 50%;
+    filter: blur(80px); pointer-events: none; z-index: 0;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  .orb-1 { width: 500px; height: 500px; background: rgba(124,106,247,0.12); top: -150px; right: -100px; animation-delay: 0s; }
+  .orb-2 { width: 400px; height: 400px; background: rgba(94,234,212,0.08); bottom: -100px; left: -80px; animation-delay: -6s; }
+  .orb-3 { width: 300px; height: 300px; background: rgba(248,113,113,0.07); top: 40%; left: 30%; animation-delay: -12s; }
+
+  @keyframes drift {
+    from { transform: translate(0,0) scale(1); }
+    to   { transform: translate(30px, 40px) scale(1.08); }
+  }
+
+  /* ── Layout ── */
+  .wrapper {
+    position: relative; z-index: 1;
+    max-width: 780px; margin: 0 auto;
+    padding: 60px 24px 100px;
+  }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    margin-bottom: 52px;
+    animation: fadeUp 0.7s ease both;
+  }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(124,106,247,0.12);
+    border: 1px solid rgba(124,106,247,0.3);
+    border-radius: 100px;
+    padding: 6px 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 0.12em;
+    color: var(--accent);
+    margin-bottom: 24px;
+    text-transform: uppercase;
+  }
+  .badge-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse-dot 2s ease infinite;
+  }
+  @keyframes pulse-dot {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  h1 {
+    font-size: clamp(38px, 7vw, 68px);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #fff 30%, rgba(124,106,247,0.8) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 16px;
+  }
+
+  .subtitle {
+    font-size: 15px;
+    color: var(--muted);
+    font-weight: 400;
+    line-height: 1.6;
+    max-width: 440px;
+    margin: 0 auto;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 32px;
+    backdrop-filter: blur(20px);
+    transition: box-shadow 0.4s ease;
+    animation: fadeUp 0.7s 0.15s ease both;
+  }
+  .card:hover { box-shadow: 0 8px 40px rgba(124,106,247,0.08); }
+
+  .input-label {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    line-height: 1.7;
+    padding: 18px 20px;
+    resize: none;
+    min-height: 140px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  textarea::placeholder { color: var(--muted); }
+  textarea:focus {
+    border-color: rgba(124,106,247,0.5);
+    box-shadow: 0 0 0 3px rgba(124,106,247,0.1);
+  }
+
+  .char-count {
+    text-align: right;
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  .btn {
+    width: 100%;
+    margin-top: 20px;
+    padding: 16px 24px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.15s, box-shadow 0.2s;
+    background: linear-gradient(135deg, #7c6af7, #5b8ef5);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(124,106,247,0.35);
+  }
+  .btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(124,106,247,0.5);
+  }
+  .btn:active:not(:disabled) { transform: translateY(0); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-shimmer {
+    position: absolute; inset: 0;
+    background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.15) 50%, transparent 60%);
+    transform: translateX(-100%);
+    transition: transform 0.6s ease;
+  }
+  .btn:hover .btn-shimmer { transform: translateX(100%); }
+
+  /* ── Examples ── */
+  .examples {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 16px;
+    animation: fadeUp 0.7s 0.2s ease both;
+  }
+  .ex-label {
+    width: 100%;
+    font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    margin-bottom: 4px;
+  }
+  .ex-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .ex-btn:hover { border-color: rgba(124,106,247,0.4); color: var(--accent); background: rgba(124,106,247,0.06); }
+  .ex-btn.spam-ex:hover { border-color: rgba(248,113,113,0.4); color: var(--spam); background: rgba(248,113,113,0.06); }
+
+  /* ── Result ── */
+  .result {
+    margin-top: 28px;
+    border-radius: 16px;
+    padding: 28px;
+    border: 1px solid transparent;
+    animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+    display: none;
+  }
+  .result.show { display: block; }
+  .result.spam {
+    background: rgba(248,113,113,0.05);
+    border-color: rgba(248,113,113,0.2);
+    box-shadow: 0 0 40px var(--glow-spam);
+  }
+  .result.ham {
+    background: rgba(52,211,153,0.05);
+    border-color: rgba(52,211,153,0.2);
+    box-shadow: 0 0 40px var(--glow-ham);
+  }
+
+  .result-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .verdict {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .verdict-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+  }
+  .spam .verdict-icon { background: rgba(248,113,113,0.15); }
+  .ham  .verdict-icon { background: rgba(52,211,153,0.15); }
+  .verdict-text h2 {
+    font-size: 24px; font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .spam .verdict-text h2 { color: var(--spam); }
+  .ham  .verdict-text h2 { color: var(--ham); }
+  .verdict-text p {
+    font-size: 12px; color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    margin-top: 2px;
+  }
+
+  /* Confidence ring */
+  .conf-ring { position: relative; width: 72px; height: 72px; flex-shrink: 0; }
+  .conf-ring svg { transform: rotate(-90deg); }
+  .conf-ring-track { fill: none; stroke: var(--surface2); stroke-width: 6; }
+  .conf-ring-fill {
+    fill: none; stroke-width: 6;
+    stroke-linecap: round;
+    stroke-dasharray: 188;
+    stroke-dashoffset: 188;
+    transition: stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1);
+  }
+  .spam .conf-ring-fill { stroke: var(--spam); }
+  .ham  .conf-ring-fill { stroke: var(--ham); }
+  .conf-ring-label {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace;
+  }
+  .conf-ring-label span:first-child { font-size: 16px; font-weight: 500; }
+  .conf-ring-label span:last-child  { font-size: 9px; color: var(--muted); }
+
+  /* Score bars */
+  .scores { display: grid; gap: 12px; }
+  .score-row { display: flex; flex-direction: column; gap: 6px; }
+  .score-meta {
+    display: flex; justify-content: space-between;
+    font-size: 11px; font-family: 'DM Mono', monospace;
+  }
+  .score-meta span:first-child { color: var(--muted); }
+  .score-meta span:last-child  { font-weight: 500; }
+  .bar-track {
+    height: 6px; background: var(--surface2);
+    border-radius: 100px; overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%; border-radius: 100px;
+    width: 0; transition: width 1s cubic-bezier(0.4,0,0.2,1);
+  }
+  .bar-bert    { background: linear-gradient(90deg, #7c6af7, #a78bfa); }
+  .bar-ens     { background: linear-gradient(90deg, #5eead4, #67e8f9); }
+  .bar-combined{ }
+  .spam .bar-combined { background: linear-gradient(90deg, #f87171, #fb923c); }
+  .ham  .bar-combined { background: linear-gradient(90deg, #34d399, #6ee7b7); }
+
+  .divider {
+    height: 1px; background: var(--border);
+    margin: 20px 0;
+  }
+
+  /* ── Loading ── */
+  .loading {
+    display: none;
+    text-align: center;
+    padding: 40px 0;
+    margin-top: 28px;
+  }
+  .loading.show { display: block; }
+  .spinner {
+    width: 40px; height: 40px; margin: 0 auto 16px;
+    border: 3px solid var(--surface2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading p {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px; color: var(--muted);
+    animation: blink 1.5s ease infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* ── Error ── */
+  .error-msg {
+    display: none;
+    margin-top: 20px;
+    background: rgba(251,191,36,0.06);
+    border: 1px solid rgba(251,191,36,0.2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--warn);
+  }
+  .error-msg.show { display: block; }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    margin-top: 60px;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.05em;
+    animation: fadeUp 0.7s 0.4s ease both;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  /* ── Animations ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  /* ── Mobile ── */
+  @media (max-width: 520px) {
+    .wrapper { padding: 40px 16px 80px; }
+    .card { padding: 22px; }
+    .result { padding: 20px; }
+    .result-header { flex-direction: column; align-items: flex-start; gap: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<div class="wrapper">
+
+  <header>
+    <div class="badge"><span class="badge-dot"></span>BERT + Ensemble · Live AI</div>
+    <h1>SpamShield</h1>
+    <p class="subtitle">Hybrid AI detector combining fine-tuned BERT with TF-IDF ensemble &amp; fuzzy matching</p>
+  </header>
+
+  <div class="card">
+    <label class="input-label" for="msg">Paste your message or email</label>
+    <textarea id="msg" placeholder="Congratulations! You've been selected for a FREE prize. Click here to claim now..." maxlength="2000"></textarea>
+    <div class="char-count"><span id="charNum">0</span> / 2000</div>
+
+    <button class="btn" id="analyzeBtn" onclick="analyze()">
+      <span class="btn-shimmer"></span>
+      Analyze Message
+    </button>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Running BERT + Ensemble inference...</p>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <!-- Result card -->
+    <div class="result" id="result">
+      <div class="result-header">
+        <div class="verdict">
+          <div class="verdict-icon" id="verdictIcon"></div>
+          <div class="verdict-text">
+            <h2 id="verdictLabel">SPAM</h2>
+            <p id="verdictSub">High confidence detection</p>
+          </div>
+        </div>
+        <div class="conf-ring" id="confRing">
+          <svg width="72" height="72" viewBox="0 0 72 72">
+            <circle class="conf-ring-track" cx="36" cy="36" r="30"/>
+            <circle class="conf-ring-fill" id="ringFill" cx="36" cy="36" r="30"/>
+          </svg>
+          <div class="conf-ring-label">
+            <span id="confNum">0%</span>
+            <span>CONF</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="scores">
+        <div class="score-row">
+          <div class="score-meta">
+            <span>BERT Model</span>
+            <span id="bertVal">—</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill bar-bert" id="bertBar"></div></div>
+        </div>
+        <div class="score-row">
+          <div class="score-meta">
+            <span>Ensemble (TF-IDF + Fuzzy)</span>
+            <span id="ensVal">—</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill bar-ens" id="ensBar"></div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="score-row">
+          <div class="score-meta">
+            <span>Combined Score</span>
+            <span id="combVal">—</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill bar-combined" id="combBar"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick examples -->
+  <div class="examples">
+    <span class="ex-label">Try an example →</span>
+    <button class="ex-btn spam-ex" onclick="setExample('spam1')">🔴 Win prize SMS</button>
+    <button class="ex-btn spam-ex" onclick="setExample('spam2')">🔴 Phishing email</button>
+    <button class="ex-btn spam-ex" onclick="setExample('spam3')">🔴 Loan offer</button>
+    <button class="ex-btn" onclick="setExample('ham1')">🟢 Normal message</button>
+    <button class="ex-btn" onclick="setExample('ham2')">🟢 Work email</button>
+  </div>
+
+  <footer>
+    Built by <a href="https://huggingface.co/charuu2" target="_blank">charuu2</a> ·
+    Model: <a href="https://huggingface.co/charuu2/spam-detector-bert" target="_blank">charuu2/spam-detector-bert</a> ·
+    Powered by BERT + Ensemble AI
+  </footer>
+
+</div>
+
+<script>
+// ── CONFIG: change this to your actual HuggingFace Space URL ──
+const API_URL = "https://charuu2-bertsenti.hf.space/predict";
+
+const examples = {
+  spam1: "CONGRATULATIONS! You've WON a Rs.50,000 prize! Call NOW or click http://prize-claim.xyz to collect. Offer expires TONIGHT. Don't miss this LUCKY DRAW winner announcement!",
+  spam2: "Dear Customer, your account has been SUSPENDED. Verify immediately at http://secure-login-update.com or your account will be permanently BLOCKED. Act NOW!",
+  spam3: "Get instant loan Rs.5 lakh approved in 2 minutes! No documents needed. Low interest. Call +91-XXXXXXXX now. Limited offer, apply TODAY!",
+  ham1: "Hey, are you free this weekend? Was thinking we could catch a movie or just hang out at the coffee place near your office.",
+  ham2: "Hi team, the Q3 report is ready for review. Please check the shared doc and send me your feedback by Thursday EOD. Thanks!"
+};
+
+const textarea = document.getElementById('msg');
+const charNum  = document.getElementById('charNum');
+
+textarea.addEventListener('input', () => {
+  charNum.textContent = textarea.value.length;
+});
+
+function setExample(key) {
+  textarea.value = examples[key];
+  charNum.textContent = textarea.value.length;
+  textarea.focus();
+}
+
+async function analyze() {
+  const text = textarea.value.trim();
+  if (!text) { textarea.focus(); return; }
+
+  const btn    = document.getElementById('analyzeBtn');
+  const load   = document.getElementById('loading');
+  const result = document.getElementById('result');
+  const errEl  = document.getElementById('errorMsg');
+
+  // Reset
+  result.className = 'result';
+  errEl.className  = 'error-msg';
+  load.className   = 'loading show';
+  btn.disabled     = true;
+
+  try {
+    const res  = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    load.className = 'loading';
+    showResult(data);
+
+  } catch (err) {
+    load.className = 'loading';
+    errEl.className = 'error-msg show';
+    errEl.textContent = `⚠ ${err.message}. Make sure the HuggingFace Space is running and the API_URL is correct.`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showResult(data) {
+  const isSpam = data.label === "SPAM";
+  const conf   = data.confidence;
+
+  const result    = document.getElementById('result');
+  const icon      = document.getElementById('verdictIcon');
+  const label     = document.getElementById('verdictLabel');
+  const sub       = document.getElementById('verdictSub');
+  const ringFill  = document.getElementById('ringFill');
+  const confNum   = document.getElementById('confNum');
+  const bertVal   = document.getElementById('bertVal');
+  const ensVal    = document.getElementById('ensVal');
+  const combVal   = document.getElementById('combVal');
+
+  // Set classes
+  result.className = `result show ${isSpam ? 'spam' : 'ham'}`;
+
+  icon.textContent = isSpam ? '⚠️' : '✅';
+  label.textContent = data.label;
+  sub.textContent = `${conf}% confidence · Sentiment: ${data.sentiment > 0 ? '+' : ''}${data.sentiment}`;
+
+  // Confidence ring (circumference = 2π×30 ≈ 188.5)
+  const offset = 188 * (1 - conf / 100);
+  setTimeout(() => {
+    ringFill.style.strokeDashoffset = offset;
+    confNum.textContent = conf + '%';
+  }, 80);
+
+  // Bars
+  bertVal.textContent  = data.bert_score + '%';
+  ensVal.textContent   = data.ensemble_score + '%';
+  combVal.textContent  = conf + '%';
+
+  setTimeout(() => {
+    document.getElementById('bertBar').style.width  = data.bert_score + '%';
+    document.getElementById('ensBar').style.width   = data.ensemble_score + '%';
+    document.getElementById('combBar').style.width  = conf + '%';
+  }, 100);
+}
+
+// Allow Enter+Ctrl to submit
+textarea.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) analyze();
+});
+</script>
+</body>
+</html>
